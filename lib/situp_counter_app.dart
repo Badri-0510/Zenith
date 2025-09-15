@@ -5,27 +5,27 @@ import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 import 'package:flutter/services.dart';
 
-class PushupCounterApp extends StatelessWidget {
+class SitupCounterApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pushup Counter',
+      title: 'Situp Counter',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        primarySwatch: Colors.purple,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: PushupCounterScreen(),
+      home: SitupCounterScreen(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
-class PushupCounterScreen extends StatefulWidget {
+class SitupCounterScreen extends StatefulWidget {
   @override
-  _PushupCounterScreenState createState() => _PushupCounterScreenState();
+  _SitupCounterScreenState createState() => _SitupCounterScreenState();
 }
 
-class _PushupCounterScreenState extends State<PushupCounterScreen>
+class _SitupCounterScreenState extends State<SitupCounterScreen>
     with WidgetsBindingObserver {
   CameraController? _cameraController;
   PoseDetector? _poseDetector;
@@ -34,18 +34,17 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
   bool _isCameraInitialized = false;
   CustomPaint? _customPaint;
   
-  // Pushup counting variables
-  int _pushupCount = 0;
-  bool _isInDownPosition = false;
-  double _lastShoulderElbowAngle = 0;
-  double _lastHipAngle = 0;
-  double _lastBodyVerticalPosition = 0;
+  // Situp counting variables
+  int _situpCount = 0;
+  bool _isInUpPosition = false;
+  double _lastTorsoAngle = 0;
+  double _lastKneeAngle = 0;
   DateTime? _lastProcessTime;
-  String _statusMessage = "Position yourself and start detection";
+  String _statusMessage = "Position yourself on your side and start detection";
   
   // Form validation flags
-  bool _hasProperHipAngle = false;
-  bool _isInPlankPosition = false;
+  bool _hasProperKneeAngle = false;
+  bool _isInStartingPosition = false;
   String _formFeedback = "";
   
   // Performance optimization
@@ -53,12 +52,12 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
   static const int FRAME_SKIP = 2;
   static const double MIN_CONFIDENCE = 0.3;
   
-  // Enhanced thresholds
-  static const double DOWN_ELBOW_ANGLE_THRESHOLD = 90;
-  static const double UP_ELBOW_ANGLE_THRESHOLD = 160;
-  static const double MIN_HIP_ANGLE_THRESHOLD = 150; // Straight body line
-  static const double MAX_HIP_SAG_THRESHOLD = 210; // Hip sagging too much
-  static const double GROUND_PROXIMITY_THRESHOLD = 50; // Distance from ground check
+  // Situp-specific thresholds
+  static const double DOWN_TORSO_ANGLE_THRESHOLD = 95; // Lying down position
+  static const double UP_TORSO_ANGLE_THRESHOLD = 120; // Sitting up position
+  static const double MIN_KNEE_ANGLE_THRESHOLD = 60; // Knees bent properly
+  static const double MAX_KNEE_ANGLE_THRESHOLD = 120; // Not too bent
+  static const double STARTING_POSITION_THRESHOLD = 30; // Almost flat
 
   @override
   void initState() {
@@ -124,11 +123,11 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
       _cameraController!.startImageStream(_processCameraImage);
       setState(() {
         _isStreaming = true;
-        _statusMessage = "Detection started. Get into proper plank position!";
-        _pushupCount = 0;
-        _isInDownPosition = false;
-        _hasProperHipAngle = false;
-        _isInPlankPosition = false;
+        _statusMessage = "Detection started. Lie on your side with knees bent!";
+        _situpCount = 0;
+        _isInUpPosition = false;
+        _hasProperKneeAngle = false;
+        _isInStartingPosition = false;
       });
     } catch (e) {
       setState(() {
@@ -147,7 +146,7 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
       setState(() {
         _isStreaming = false;
         _customPaint = null;
-        _statusMessage = "Detection stopped. Total valid pushups: $_pushupCount";
+        _statusMessage = "Detection stopped. Total valid situps: $_situpCount";
         _formFeedback = "";
       });
     } catch (e) {
@@ -159,9 +158,6 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
 
   void _processCameraImage(CameraImage image) async {
     if (_isDetecting || _poseDetector == null) return;
-    
-    _frameSkipCounter++;
-    if (_frameSkipCounter % FRAME_SKIP != 0) return;
     
     final now = DateTime.now();
     if (_lastProcessTime != null && 
@@ -183,13 +179,13 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
 
       if (mounted) {
         if (poses.isNotEmpty && poses.first.landmarks.isNotEmpty) {
-          _processPoseForPushups(poses.first);
+          _processPoseForSitups(poses.first);
           _updateCustomPaint(poses.first, image);
         } else {
           setState(() {
             _customPaint = null;
             if (_isStreaming) {
-              _statusMessage = "No pose detected. Ensure your full body is visible.";
+              _statusMessage = "No pose detected. Ensure your full body is visible from the side.";
               _formFeedback = "";
             }
           });
@@ -258,95 +254,105 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
     }
   }
 
-  void _processPoseForPushups(Pose pose) {
+  void _processPoseForSitups(Pose pose) {
     final landmarks = pose.landmarks;
     
-    // Get all required landmarks
+    // Get all required landmarks for side view situp analysis
     final leftShoulder = landmarks[PoseLandmarkType.leftShoulder];
     final rightShoulder = landmarks[PoseLandmarkType.rightShoulder];
-    final leftElbow = landmarks[PoseLandmarkType.leftElbow];
-    final rightElbow = landmarks[PoseLandmarkType.rightElbow];
-    final leftWrist = landmarks[PoseLandmarkType.leftWrist];
-    final rightWrist = landmarks[PoseLandmarkType.rightWrist];
     final leftHip = landmarks[PoseLandmarkType.leftHip];
     final rightHip = landmarks[PoseLandmarkType.rightHip];
     final leftKnee = landmarks[PoseLandmarkType.leftKnee];
     final rightKnee = landmarks[PoseLandmarkType.rightKnee];
     final leftAnkle = landmarks[PoseLandmarkType.leftAnkle];
     final rightAnkle = landmarks[PoseLandmarkType.rightAnkle];
+    final nose = landmarks[PoseLandmarkType.nose];
 
     // Check if all required landmarks are detected
     final requiredLandmarks = [
-      leftShoulder, rightShoulder, leftElbow, rightElbow,
-      leftWrist, rightWrist, leftHip, rightHip, leftKnee, rightKnee
+      leftShoulder, rightShoulder, leftHip, rightHip, 
+      leftKnee, rightKnee, nose
     ];
     
     if (requiredLandmarks.any((landmark) => 
         landmark == null || landmark.likelihood < MIN_CONFIDENCE)) {
       setState(() {
-        _statusMessage = "Position yourself so your full body is visible";
-        _formFeedback = "Need to see: shoulders, elbows, wrists, hips, and knees";
+        _statusMessage = "Position yourself on your side so your full body is visible";
+        _formFeedback = "Need to see: head, shoulders, hips, knees from side view";
       });
       return;
     }
 
-    // Calculate angles
-    final leftElbowAngle = _calculateAngle(leftShoulder!, leftElbow!, leftWrist!);
-    final rightElbowAngle = _calculateAngle(rightShoulder!, rightElbow!, rightWrist!);
-    final avgElbowAngle = (leftElbowAngle + rightElbowAngle) / 2;
-    
-    // Calculate hip angle (shoulder-hip-knee angle for body straightness)
-    final leftHipAngle = _calculateAngle(leftShoulder, leftHip!, leftKnee!);
-    final rightHipAngle = _calculateAngle(rightShoulder, rightHip!, rightKnee!);
-    final avgHipAngle = (leftHipAngle + rightHipAngle) / 2;
-    
-    _lastShoulderElbowAngle = avgElbowAngle;
-    _lastHipAngle = avgHipAngle;
+    // Calculate average positions for side view
+    final avgShoulder = Offset(
+      (leftShoulder!.x + rightShoulder!.x) / 2,
+      (leftShoulder.y + rightShoulder.y) / 2
+    );
+    final avgHip = Offset(
+      (leftHip!.x + rightHip!.x) / 2,
+      (leftHip.y + rightHip.y) / 2
+    );
+    final avgKnee = Offset(
+      (leftKnee!.x + rightKnee!.x) / 2,
+      (leftKnee.y + rightKnee.y) / 2
+    );
+    final avgAnkle = leftAnkle != null && rightAnkle != null ? Offset(
+      (leftAnkle.x + rightAnkle.x) / 2,
+      (leftAnkle.y + rightAnkle.y) / 2
+    ) : null;
 
-    // Check body position and form
-    _validatePushupForm(avgHipAngle, leftHip, rightHip, leftAnkle, rightAnkle);
+    // Calculate torso angle (shoulder to hip relative to horizontal)
+    final torsoVector = avgHip - avgShoulder;
+    final horizontalVector = Offset(1, 0);
+    final torsoAngle = _calculateAngleFromVectors(torsoVector, horizontalVector);
+    
+    // Calculate knee angle (hip-knee-ankle)
+    double kneeAngle = 90; // Default if ankle not detected
+    if (avgAnkle != null) {
+      kneeAngle = _calculateAngleFromPoints(avgHip, avgKnee, avgAnkle);
+    }
+    
+    _lastTorsoAngle = torsoAngle;
+    _lastKneeAngle = kneeAngle;
 
-    // Only count pushup if form is proper
-    if (_hasProperHipAngle && _isInPlankPosition) {
-      _countPushup(avgElbowAngle);
+    // Validate situp form
+    _validateSitupForm(torsoAngle, kneeAngle, avgShoulder, avgHip, nose!);
+
+    // Only count situp if form is proper
+    if (_hasProperKneeAngle && _isInStartingPosition) {
+      _countSitup(torsoAngle);
     } else {
-      _providePushupFormFeedback(avgElbowAngle, avgHipAngle);
+      _provideSitupFormFeedback(torsoAngle, kneeAngle);
     }
   }
 
-  void _validatePushupForm(double hipAngle, PoseLandmark leftHip, PoseLandmark rightHip, 
-                          PoseLandmark? leftAnkle, PoseLandmark? rightAnkle) {
+  void _validateSitupForm(double torsoAngle, double kneeAngle, 
+                         Offset avgShoulder, Offset avgHip, PoseLandmark nose) {
     List<String> formIssues = [];
     
-    // Check hip angle for straight body line
-    if (hipAngle < MIN_HIP_ANGLE_THRESHOLD) {
-      _hasProperHipAngle = false;
-      formIssues.add("Hips too low (piking)");
-    } else if (hipAngle > MAX_HIP_SAG_THRESHOLD) {
-      _hasProperHipAngle = false;
-      formIssues.add("Hips sagging");
+    // Check knee angle for proper bent knees
+    if (kneeAngle < MIN_KNEE_ANGLE_THRESHOLD) {
+      _hasProperKneeAngle = false;
+      formIssues.add("Bend knees more");
+    } else if (kneeAngle > MAX_KNEE_ANGLE_THRESHOLD) {
+      _hasProperKneeAngle = false;
+      formIssues.add("Don't over-bend knees");
     } else {
-      _hasProperHipAngle = true;
+      _hasProperKneeAngle = true;
     }
 
-    // Check if person is in plank position (not lying down)
-    final avgHipY = (leftHip.y + rightHip.y) / 2;
-    
-    if (leftAnkle != null && rightAnkle != null) {
-      final avgAnkleY = (leftAnkle.y + rightAnkle.y) / 2;
-      final hipToAnkleDistance = (avgHipY - avgAnkleY).abs();
-      
-      _isInPlankPosition = hipToAnkleDistance > GROUND_PROXIMITY_THRESHOLD;
-      
-      if (!_isInPlankPosition) {
-        formIssues.add("Too close to ground - maintain plank position");
-      }
+    // Check if person is in starting position (lying down)
+    if (torsoAngle > STARTING_POSITION_THRESHOLD) {
+      _isInStartingPosition = true;
     } else {
-      // Fallback: use hip position relative to image height
-      _isInPlankPosition = avgHipY < 0.8; // Hip should be in upper portion of image
-      if (!_isInPlankPosition) {
-        formIssues.add("Maintain elevated plank position");
-      }
+      _isInStartingPosition = false;
+      formIssues.add("Lie down more to start position");
+    }
+
+    // Check head position relative to shoulders and hips
+    final headTorsoAlignment = _checkHeadAlignment(nose, avgShoulder, avgHip);
+    if (!headTorsoAlignment) {
+      formIssues.add("Keep head aligned with torso");
     }
 
     setState(() {
@@ -354,39 +360,65 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
     });
   }
 
-  void _countPushup(double elbowAngle) {
-    if (!_isInDownPosition && elbowAngle < DOWN_ELBOW_ANGLE_THRESHOLD) {
-      _isInDownPosition = true;
+  bool _checkHeadAlignment(PoseLandmark nose, Offset avgShoulder, Offset avgHip) {
+    // Check if head is reasonably aligned with torso line
+    final torsoLine = avgHip - avgShoulder;
+    final headToShoulder = Offset(nose.x - avgShoulder.dx, nose.y - avgShoulder.dy);
+    
+    // Calculate if head is within reasonable alignment
+    final crossProduct = torsoLine.dx * headToShoulder.dy - torsoLine.dy * headToShoulder.dx;
+    final alignmentThreshold = 50; // Adjust based on testing
+    
+    return crossProduct.abs() < alignmentThreshold;
+  }
+
+  void _countSitup(double torsoAngle) {
+    if (!_isInUpPosition && torsoAngle > UP_TORSO_ANGLE_THRESHOLD) {
+      _isInUpPosition = true;
       setState(() {
-        _statusMessage = "Down position - Push up! ✓ Form good";
+        _statusMessage = "Up position - Lower down! ✓ Form good";
       });
-    } else if (_isInDownPosition && elbowAngle > UP_ELBOW_ANGLE_THRESHOLD) {
-      _isInDownPosition = false;
-      _pushupCount++;
+    } else if (_isInUpPosition && torsoAngle < DOWN_TORSO_ANGLE_THRESHOLD) {
+      _isInUpPosition = false;
+      _situpCount++;
       HapticFeedback.lightImpact();
       setState(() {
-        _statusMessage = "Pushup #$_pushupCount completed! Excellent form! 💪";
+        _statusMessage = "Situp #$_situpCount completed! Excellent form! 💪";
       });
     } else {
       setState(() {
-        if (_isInDownPosition) {
-          _statusMessage = "Push up! (Angle: ${elbowAngle.toInt()}°) ✓ Form good";
+        if (_isInUpPosition) {
+          _statusMessage = "Lower down! (Angle: ${torsoAngle.toInt()}°) ✓ Form good";
         } else {
-          _statusMessage = "Go down! (Angle: ${elbowAngle.toInt()}°) ✓ Form good";
+          _statusMessage = "Sit up! (Angle: ${torsoAngle.toInt()}°) ✓ Form good";
         }
       });
     }
   }
 
-  void _providePushupFormFeedback(double elbowAngle, double hipAngle) {
+  void _provideSitupFormFeedback(double torsoAngle, double kneeAngle) {
     setState(() {
-      _statusMessage = "Fix form before continuing - Hip: ${hipAngle.toInt()}°, Elbow: ${elbowAngle.toInt()}°";
+      _statusMessage = "Fix form before continuing - Torso: ${torsoAngle.toInt()}°, Knee: ${kneeAngle.toInt()}°";
     });
   }
 
-  double _calculateAngle(PoseLandmark point1, PoseLandmark point2, PoseLandmark point3) {
-    final vector1 = Offset(point1.x - point2.x, point1.y - point2.y);
-    final vector2 = Offset(point3.x - point2.x, point3.y - point2.y);
+  double _calculateAngleFromVectors(Offset vector1, Offset vector2) {
+    final dotProduct = vector1.dx * vector2.dx + vector1.dy * vector2.dy;
+    final magnitude1 = sqrt(vector1.dx * vector1.dx + vector1.dy * vector1.dy);
+    final magnitude2 = sqrt(vector2.dx * vector2.dx + vector2.dy * vector2.dy);
+    
+    if (magnitude1 == 0 || magnitude2 == 0) return 0;
+    
+    final cosAngle = dotProduct / (magnitude1 * magnitude2);
+    final clampedCos = cosAngle.clamp(-1.0, 1.0);
+    final angleRad = acos(clampedCos);
+    
+    return angleRad * 180 / pi;
+  }
+
+  double _calculateAngleFromPoints(Offset point1, Offset point2, Offset point3) {
+    final vector1 = Offset(point1.dx - point2.dx, point1.dy - point2.dy);
+    final vector2 = Offset(point3.dx - point2.dx, point3.dy - point2.dy);
     
     final dotProduct = vector1.dx * vector2.dx + vector1.dy * vector2.dy;
     final magnitude1 = sqrt(vector1.dx * vector1.dx + vector1.dy * vector1.dy);
@@ -402,15 +434,15 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
   }
 
   void _updateCustomPaint(Pose pose, CameraImage image) {
-    final painter = PosePainter(
+    final painter = SitupPosePainter(
       pose,
       Size(image.width.toDouble(), image.height.toDouble()),
       _cameraController!.description.sensorOrientation,
-      _lastShoulderElbowAngle,
-      _lastHipAngle,
-      _isInDownPosition,
-      _hasProperHipAngle,
-      _isInPlankPosition,
+      _lastTorsoAngle,
+      _lastKneeAngle,
+      _isInUpPosition,
+      _hasProperKneeAngle,
+      _isInStartingPosition,
     );
     
     setState(() {
@@ -420,10 +452,10 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
 
   void _resetCounter() {
     setState(() {
-      _pushupCount = 0;
-      _isInDownPosition = false;
-      _hasProperHipAngle = false;
-      _isInPlankPosition = false;
+      _situpCount = 0;
+      _isInUpPosition = false;
+      _hasProperKneeAngle = false;
+      _isInStartingPosition = false;
       _formFeedback = "";
       _statusMessage = _isStreaming ? "Counter reset. Get into proper position!" : "Counter reset.";
     });
@@ -456,8 +488,8 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: Text('Zenith Pushup Counter'),
-        backgroundColor: Colors.blue.shade800,
+        title: Text('Zenith Situp Counter'),
+        backgroundColor: Colors.purple.shade800,
         elevation: 0,
       ),
       body: _buildBody(),
@@ -470,7 +502,7 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: Colors.blue),
+            CircularProgressIndicator(color: Colors.purple),
             SizedBox(height: 20),
             Text(
               _statusMessage,
@@ -488,7 +520,7 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
         CameraPreview(_cameraController!),
         if (_customPaint != null) _customPaint!,
         
-        // Enhanced top info panel
+        // Top info panel
         Positioned(
           top: 20,
           left: 20,
@@ -505,24 +537,23 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Valid Pushups: $_pushupCount',
+                      'Valid Situps: $_situpCount',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    // Form status indicator
                     Container(
                       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: (_hasProperHipAngle && _isInPlankPosition) 
+                        color: (_hasProperKneeAngle && _isInStartingPosition) 
                             ? Colors.green 
                             : Colors.red.withOpacity(0.8),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        (_hasProperHipAngle && _isInPlankPosition) ? 'GOOD FORM' : 'FIX FORM',
+                        (_hasProperKneeAngle && _isInStartingPosition) ? 'GOOD FORM' : 'FIX FORM',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -595,7 +626,7 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
           ),
         ),
         
-        // Enhanced instructions
+        // Instructions
         if (!_isStreaming)
           Positioned(
             bottom: 140,
@@ -604,14 +635,14 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
             child: Container(
               padding: EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.9),
+                color: Colors.purple.withOpacity(0.9),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Smart Form Detection:',
+                    'Smart Situp Form Detection:',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -620,11 +651,11 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
                   ),
                   SizedBox(height: 8),
                   Text(
-                    '• Position phone to see full body (head to feet)\n'
-                    '• Maintain straight plank position\n'
-                    '• Keep hips aligned (no sagging or piking)\n'
-                    '• Only proper form pushups are counted\n'
-                    '• Follow real-time form feedback',
+                    '• Lie on your side with full body visible\n'
+                    '• Bend knees at 60-120 degree angle\n'
+                    '• Keep head aligned with torso\n'
+                    '• Start lying down, sit up to 90+ degrees\n'
+                    '• Only proper form situps are counted',
                     style: TextStyle(color: Colors.white, fontSize: 13),
                   ),
                 ],
@@ -669,25 +700,25 @@ class _PushupCounterScreenState extends State<PushupCounterScreen>
   }
 }
 
-class PosePainter extends CustomPainter {
+class SitupPosePainter extends CustomPainter {
   final Pose pose;
   final Size imageSize;
   final int rotation;
-  final double elbowAngle;
-  final double hipAngle;
-  final bool isInDownPosition;
-  final bool hasProperHipAngle;
-  final bool isInPlankPosition;
+  final double torsoAngle;
+  final double kneeAngle;
+  final bool isInUpPosition;
+  final bool hasProperKneeAngle;
+  final bool isInStartingPosition;
 
-  PosePainter(
+  SitupPosePainter(
     this.pose,
     this.imageSize,
     this.rotation,
-    this.elbowAngle,
-    this.hipAngle,
-    this.isInDownPosition,
-    this.hasProperHipAngle,
-    this.isInPlankPosition,
+    this.torsoAngle,
+    this.kneeAngle,
+    this.isInUpPosition,
+    this.hasProperKneeAngle,
+    this.isInStartingPosition,
   );
 
   @override
@@ -699,9 +730,9 @@ class PosePainter extends CustomPainter {
     Color pointColor;
     Color lineColor;
     
-    if (hasProperHipAngle && isInPlankPosition) {
-      pointColor = isInDownPosition ? Colors.orange : Colors.green;
-      lineColor = isInDownPosition ? Colors.orange.withOpacity(0.8) : Colors.green.withOpacity(0.8);
+    if (hasProperKneeAngle && isInStartingPosition) {
+      pointColor = isInUpPosition ? Colors.orange : Colors.green;
+      lineColor = isInUpPosition ? Colors.orange.withOpacity(0.8) : Colors.green.withOpacity(0.8);
     } else {
       pointColor = Colors.red;
       lineColor = Colors.red.withOpacity(0.8);
@@ -717,24 +748,23 @@ class PosePainter extends CustomPainter {
       ..strokeWidth = 4
       ..style = PaintingStyle.stroke;
 
-    // Hip line paint (special color for hip alignment)
-    final hipLinePaint = Paint()
-      ..color = hasProperHipAngle ? Colors.green : Colors.red
+    // Torso line paint (special color for torso angle)
+    final torsoLinePaint = Paint()
+      ..color = isInStartingPosition ? Colors.green : Colors.red
       ..strokeWidth = 6
       ..style = PaintingStyle.stroke;
 
-    // Draw all key landmarks
+    // Draw key landmarks for situp analysis
     final keyLandmarks = [
+      PoseLandmarkType.nose,
       PoseLandmarkType.leftShoulder,
       PoseLandmarkType.rightShoulder,
-      PoseLandmarkType.leftElbow,
-      PoseLandmarkType.rightElbow,
-      PoseLandmarkType.leftWrist,
-      PoseLandmarkType.rightWrist,
       PoseLandmarkType.leftHip,
       PoseLandmarkType.rightHip,
       PoseLandmarkType.leftKnee,
       PoseLandmarkType.rightKnee,
+      PoseLandmarkType.leftAnkle,
+      PoseLandmarkType.rightAnkle,
     ];
 
     // Draw landmark points
@@ -749,19 +779,23 @@ class PosePainter extends CustomPainter {
       }
     }
 
-    // Draw arm connections
-    _drawConnection(canvas, size, linePaint, PoseLandmarkType.leftShoulder, PoseLandmarkType.leftElbow);
-    _drawConnection(canvas, size, linePaint, PoseLandmarkType.leftElbow, PoseLandmarkType.leftWrist);
-    _drawConnection(canvas, size, linePaint, PoseLandmarkType.rightShoulder, PoseLandmarkType.rightElbow);
-    _drawConnection(canvas, size, linePaint, PoseLandmarkType.rightElbow, PoseLandmarkType.rightWrist);
-    _drawConnection(canvas, size, linePaint, PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder);
-
-    // Draw body line (shoulder-hip-knee) with special hip line coloring
-    _drawConnection(canvas, size, hipLinePaint, PoseLandmarkType.leftShoulder, PoseLandmarkType.leftHip);
-    _drawConnection(canvas, size, hipLinePaint, PoseLandmarkType.rightShoulder, PoseLandmarkType.rightHip);
-    _drawConnection(canvas, size, hipLinePaint, PoseLandmarkType.leftHip, PoseLandmarkType.leftKnee);
-    _drawConnection(canvas, size, hipLinePaint, PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee);
+    // Draw torso line (shoulder to hip)
+    _drawConnection(canvas, size, torsoLinePaint, PoseLandmarkType.leftShoulder, PoseLandmarkType.leftHip);
+    _drawConnection(canvas, size, torsoLinePaint, PoseLandmarkType.rightShoulder, PoseLandmarkType.rightHip);
+    
+    // Draw leg connections
+    _drawConnection(canvas, size, linePaint, PoseLandmarkType.leftHip, PoseLandmarkType.leftKnee);
+    _drawConnection(canvas, size, linePaint, PoseLandmarkType.leftKnee, PoseLandmarkType.leftAnkle);
+    _drawConnection(canvas, size, linePaint, PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee);
+    _drawConnection(canvas, size, linePaint, PoseLandmarkType.rightKnee, PoseLandmarkType.rightAnkle);
+    
+    // Draw head to shoulder connection
+    _drawConnection(canvas, size, linePaint, PoseLandmarkType.nose, PoseLandmarkType.leftShoulder);
+    _drawConnection(canvas, size, linePaint, PoseLandmarkType.nose, PoseLandmarkType.rightShoulder);
+    
+    // Draw hip connection
     _drawConnection(canvas, size, linePaint, PoseLandmarkType.leftHip, PoseLandmarkType.rightHip);
+    _drawConnection(canvas, size, linePaint, PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder);
 
     // Draw angle information
     final textStyle = TextStyle(
@@ -771,12 +805,12 @@ class PosePainter extends CustomPainter {
       shadows: [Shadow(color: Colors.black, blurRadius: 3)],
     );
 
-    _drawText(canvas, 'Elbow: ${elbowAngle.toInt()}°', Offset(20, size.height - 120), textStyle);
-    _drawText(canvas, 'Hip: ${hipAngle.toInt()}°', Offset(20, size.height - 100), textStyle);
+    _drawText(canvas, 'Torso: ${torsoAngle.toInt()}°', Offset(20, size.height - 120), textStyle);
+    _drawText(canvas, 'Knee: ${kneeAngle.toInt()}°', Offset(20, size.height - 100), textStyle);
     
     // Form status
-    final formStatus = hasProperHipAngle ? 'GOOD FORM ✓' : 'FIX FORM ⚠';
-    final formColor = hasProperHipAngle ? Colors.green : Colors.red;
+    final formStatus = (hasProperKneeAngle && isInStartingPosition) ? 'GOOD FORM ✓' : 'FIX FORM ⚠';
+    final formColor = (hasProperKneeAngle && isInStartingPosition) ? Colors.green : Colors.red;
     _drawText(canvas, formStatus, Offset(20, size.height - 80), 
         textStyle.copyWith(color: formColor, fontSize: 16));
   }
