@@ -87,3 +87,5 @@ double calculateAngle(Point p1, Point p2, Point p3) {
   double magnitude = v1.magnitude * v2.magnitude;
   return acos((dot / magnitude).clamp(-1, 1)) * 180 / pi;
 }
+
+[![Watch the video](https://img.youtube.com/vi/Q1UoWZZxm5Y/0.jpg)](https://www.youtube.com/shorts/Q1UoWZZxm5Y)
